@@ -2512,7 +2512,7 @@ impl<'m> super::Vm<'m> {
                     let mut arr = self.frames[top].stack.pop().expect("ArrayInsert array");
                     if let Zval::Array(rc) = &mut arr {
                         let k = coerce_key_diag(&key, &mut self.diags)
-                            .ok_or_else(|| PhpError::TypeError("Illegal offset type".to_string()))?;
+                            .ok_or_else(|| illegal_array_offset(&key))?;
                         Rc::make_mut(rc).insert(k, value);
                     }
                     self.frames[top].stack.push(arr);
@@ -2703,7 +2703,7 @@ impl<'m> super::Vm<'m> {
                         if is_plain_arr {
                             let key = keys.pop().expect("AssignPath key");
                             let k = coerce_key_diag(&key, &mut self.diags)
-                                .ok_or_else(|| PhpError::TypeError("Illegal offset type".to_string()))?;
+                                .ok_or_else(|| illegal_array_offset(&key))?;
                             let lw = {
                                 let cell = match *base {
                                     DimBase::Local(s) => &mut self.frames[top].slots[s as usize],

@@ -1,0 +1,36 @@
+EMENDA DICHIARATA del fail-set congelato s109 (file LOCALI non tracciati: wp109-harness/.gitignore ignora corpus-gate/ per
+REGOLE §10; questo .out è il registro auditabile — DA APPLICARE sul Mac al prossimo pre-flight). Causa: i 7 siti di scrittura/RMW
+su array con chiave illegale (array/oggetto) lanciavano il TypeError col testo legacy «Illegal offset type»; PHP 8.3+
+(`zend_illegal_array_offset_access`) dice «Cannot access offset of type X on array», oggetti per classe (§3.21(a) del catalogo).
+Cura fuori sessione 2026-10-24 (richiesta utente: «prendi il prossimo PHPT che non funziona e correggilo»; branch
+`fix/array-offset-type-message`, INDIPENDENTE dagli altri branch del giorno): helper `illegal_array_offset` in vm/arrays.rs,
+usato da arrays.rs (write walk), run.rs (ArrayInsert, AssignPath fast path), mod.rs (path walk, Set, OpSet, IncDec); una
+cella-chiave busy (H-72.5) tiene il testo legacy. Dente `illegal_array_offset_write_names_the_key_type` in tests/eval.rs.
+Ambiente: macchina Linux/WSL (NON il Mac del progetto): php-src 8.5.7 dal tarball php.net, phpt-runner dev-release dal tree
+(profilo dev-release, non il pin), librerie di sistema senza -dev (stub di link locali); corpus sotto tetto di memoria 4G
+(cgroup systemd, OOMPolicy=continue). Baseline dello STESSO runner prima della cura (main f89ae085, senza tetto): 2658 pass ·
+1409 fail · 1238 skip == congelato emendato 22/10 (1409 per modo).
+
+NOMI (fail → pass, da togliere da corpus-s109-{off,on}.fails e da golden-content-{off,on}.tsv): 1409 → 1404 per modo
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/bug79947.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/closures/closure_array_key_error.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/closures/closure_array_offset_error.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/constexpr/constant_expressions_invalid_offset_type_error.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/init_array_illegal_offset_type.phpt
+NUOVI FAIL: nessuno (entrambi i modi, PHPR_REG_LOWER=0 e assente=ON); NOMI identici nei due modi.
+SKIP: 1238 → 1238 (nessuno skip cambia esito).
+
+CONTENUTO dei 1404 restanti, prima ↔ dopo (sha256 del chunk, stessa macchina): identico tranne
+  RI-BASARE (testo nuovo, attesi): bug79790.phpt («… of type Closure on array» alla riga 4: il ramo LETTURA che deve lanciare
+                              alla riga 3 è §3.36, aperto), resource_key.phpt e const_array_with_resource_key.phpt («… of type
+                              resource on array»: Zend avvisa e converte la risorsa a int, phpr lancia — aperto, §3.36 coda)
+  carve-out settype_{bool,int,string}_nan_with_error_handler3.phpt (non deterministici, già esclusi dal gate)
+  lazy_objects/gh20873.phpt   crash ↔ timeout, flap di timing pre-esistente (nessun accesso con chiave illegale)
+  generators/yield_from_deep_recursion.phpt  «timed out» → «crashed (SIGKILL)»: è il TETTO 4G di questa macchina (OOM kill
+                              nel journal, entrambi i modi), non la cura; fallisce già su main. Sul Mac (senza tetto) resta timeout.
+I golden del Mac NON sono ri-basabili da qui (i chunk portano i path della macchina): replay corpus-gate.sh sul Mac dopo l'emenda.
+Batteria `cargo test --release -j 6` (PHPR_ALLOW_MISSING_ORACLE=1, niente oracle 8.5.7 qui; tetto 6G): 1753/0/2 rc=0
+(1752 + 1 dente nuovo).
+Dente LOC: vm/arrays.rs 2167 → 2182, tests/eval.rs 4773 → 4793 (cap alzati DICHIARANDO in loc_dente.rs). Se si fondono anche
+gli altri branch del 24/10: i denti di eval.rs si sommano (4773 + 22 enum + 15 bind + 20 qui).
+Catalogo: §3.21(a) marcata CURATA; nuova §3.36 (chiave illegale in lettura/isset/unset/&/list: nessun TypeError).

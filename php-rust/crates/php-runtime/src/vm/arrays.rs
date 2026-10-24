@@ -406,7 +406,7 @@ fn field_write_walk(
             let Zval::Array(rc) = target else { unreachable!("ensured array") };
             let arr = Rc::make_mut(rc);
             let k = coerce_key_diag(&key, diags)
-                .ok_or_else(|| PhpError::TypeError("Illegal offset type".to_string()))?;
+                .ok_or_else(|| illegal_array_offset(&key))?;
             if rest.is_empty() {
                 // Overwrite a plain element, but write *through* an existing
                 // reference element (the continued walk derefs at its top —
@@ -956,6 +956,21 @@ pub(super) fn coerce_key_silent(v: &Zval) -> Option<Key> {
         },
         _ => None,
     }
+}
+
+/// The TypeError for a key [`coerce_key_diag`] rejected on an array write or
+/// read-modify-write — Zend's `zend_illegal_array_offset_access` (PHP 8.3+):
+/// "Cannot access offset of type %s on array", objects named by class. A busy
+/// key cell (H-72.5) cannot be named: it keeps the legacy text.
+pub(super) fn illegal_array_offset(key: &Zval) -> PhpError {
+    let name = match key {
+        Zval::Ref(c) => match c.try_borrow() {
+            Ok(g) => g.type_name_for_error(),
+            Err(_) => return PhpError::TypeError("Illegal offset type".to_string()),
+        },
+        other => other.type_name_for_error(),
+    };
+    PhpError::TypeError(format!("Cannot access offset of type {name} on array"))
 }
 
 /// Snapshot an iterable into `(key, value)` pairs for `foreach`. An array (or a

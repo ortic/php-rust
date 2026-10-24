@@ -901,11 +901,14 @@ Trovate dal revisore semantico S-135 sui probe della leva AP1 (identiche su pin
 s135 E stash s134 ⇒ PRE-esistenti, non-leva; probe `rev135-p1/p2.php`,
 fixture `wp135-harness/fixtures-ap1.php` s8/s9/s12):
 
-- **(a) messaggio TypeError chiave illegale**: `$a[[]] = 1` → phpr
-  «Illegal offset type» vs oracle 8.5 «Cannot access offset of type array
-  on array» (il testo Zend è per-tipo e per-contesto; phpr usa il messaggio
-  legacy). Stessa classe, messaggi diversi ⇒ i phpt con expect sul testo
-  divergono.
+- **(a) ✅ CURATA 2026-10-24 — messaggio TypeError chiave illegale**: `$a[[]] = 1` → phpr
+  dava «Illegal offset type» vs oracle 8.5 «Cannot access offset of type array
+  on array». Ora i 7 siti di scrittura/RMW (`arrays.rs`, `run.rs` ArrayInsert +
+  AssignPath, `mod.rs` path walk / Set / OpSet / IncDec) passano per
+  `illegal_array_offset` (`zend_illegal_array_offset_access`, oggetti per classe;
+  una cella-chiave busy H-72.5 tiene il testo legacy). Flip: bug79947,
+  init_array_illegal_offset_type, closures/closure_array_{key,offset}_error,
+  constexpr/constant_expressions_invalid_offset_type_error. Il ramo LETTURA è §3.36.
 - **(b) deprecation 8.5 mancanti sul cammino dim-set**: `$x[null]` in
   scrittura non emette la Deprecated «null array offset» 8.5; `$f = false;
   $f[0] = 1` non emette la Deprecated «Automatic conversion of false to
@@ -1119,6 +1122,17 @@ dopo), ricevitore temporaneo risorto in una static (`D::take()->m(1)`: cascata `
 prima di «E1:», phpr ora al primo Ret dentro il catch — `getMessage()` — invece che a fine istruzione). Cura di (2):
 nota GC al punto di morte dell'operando (pop dei temp oggetto nei FetchProp/MethodCall su temporaneo, unwind): da
 cercare per NOME nel fail-set congelato prima di toccare il loop caldo.
+
+### 3.36 🔴 Chiave illegale (array/oggetto) in LETTURA, isset/empty, `??`, unset, `&`, `list()`: nessun TypeError (2026-10-24, trovata curando §3.21(a))
+
+Zend lancia `TypeError` su ogni accesso a un array con chiave array/oggetto: «Cannot access offset of type X on
+array» (lettura, `??`, `&$a[k]`, `[k => $x] = …`, `array_key_exists`), «… in isset or empty», «Cannot unset offset
+of type X on array». phpr (prima e dopo la cura §3.21(a)) tratta la chiave come ASSENTE: lettura `null` senza
+diagnostico, `isset` false, `unset` no-op, `&$a[[]]` non crea nulla, `array_key_exists([], …)` dà «Array to string
+conversion» + false. Sonda: 18 contesti, oracle vs phpr (fuori repo, `~/Claude/corpus-run/probe/offtype.php`).
+Corpus: `bug79790.phpt` (default `array()[array ()]` deve lanciare alla riga 3; phpr prosegue e lancia alla riga 4)
+e verosimilmente parte dei `offsets/*_container_offset_behaviour.phpt`. Il ramo resource-come-chiave
+(`resource_key.phpt`, `const_array_with_resource_key.phpt`: Zend avvisa e converte a int, phpr lancia) è a parte.
 
 ## 4. Punti di forza da NON toccare (invarianti verificati byte-identici)
 

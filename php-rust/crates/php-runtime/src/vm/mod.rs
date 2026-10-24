@@ -17577,7 +17577,7 @@ fn path_walk(cell: &mut Zval, keys: &[Zval], i: usize, last: Last, diags: &mut D
             let Zval::Array(rc) = cell else { unreachable!("ensured array") };
             let arr = Rc::make_mut(rc);
             let key = coerce_key_diag(k, diags)
-                .ok_or_else(|| PhpError::TypeError("Illegal offset type".to_string()))?;
+                .ok_or_else(|| illegal_array_offset(k))?;
             // ONE lookup, no key clone (WP-32 B2) — semantics identical to
             // the old contains_key + insert(Null) + get_mut composite.
             let child = arr.slot_or_vivify(key);
@@ -17638,7 +17638,7 @@ fn apply_last(parent: &mut Zval, last: Last, diags: &mut Diags, dropped: &mut Op
     match last {
         Last::Set { key, value } => {
             let k = coerce_key_diag(&key, diags)
-                .ok_or_else(|| PhpError::TypeError("Illegal offset type".to_string()))?;
+                .ok_or_else(|| illegal_array_offset(&key))?;
             // Write *through* an existing reference element (REF-4) so an alias
             // sees the update; otherwise overwrite / insert — ONE lookup on
             // the hit path (WP-32 B3). The displaced element is handed back
@@ -17670,7 +17670,7 @@ fn apply_last(parent: &mut Zval, last: Last, diags: &mut Diags, dropped: &mut Op
         }
         Last::OpSet { key, op, rhs } => {
             let k = coerce_key_diag(&key, diags)
-                .ok_or_else(|| PhpError::TypeError("Illegal offset type".to_string()))?;
+                .ok_or_else(|| illegal_array_offset(&key))?;
             // A ref element whose cell is mid-write on this very statement
             // (cycle, H-70.1) has an unreadable old value — park the whole
             // compound for `path_op`'s drain, which supplies the expression
@@ -17711,7 +17711,7 @@ fn apply_last(parent: &mut Zval, last: Last, diags: &mut Diags, dropped: &mut Op
         }
         Last::IncDec { key, inc, pre } => {
             let k = coerce_key_diag(&key, diags)
-                .ok_or_else(|| PhpError::TypeError("Illegal offset type".to_string()))?;
+                .ok_or_else(|| illegal_array_offset(&key))?;
             // Operate through a reference element (REF-4) so an alias updates
             // too — ONE lookup, no key clone (WP-32 B2).
             let slot = arr.slot_or_vivify(k);
