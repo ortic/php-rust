@@ -1140,6 +1140,18 @@ impl<'f> Lowerer<'f> {
                             (b.name.value, Some(self.lower_expr(b.value)?))
                         }
                     };
+                    // zend_compile_enum_case: a case's value must match the backing.
+                    if value.is_some() != enum_backing.is_some() {
+                        let (kind, must) = if enum_backing.is_some() { ("backed", "have") } else { ("non-backed", "not have") };
+                        return Err(LowerError::Fatal {
+                            message: format!(
+                                "Case {} of {kind} enum {} must {must} a value",
+                                String::from_utf8_lossy(case_name),
+                                String::from_utf8_lossy(&name)
+                            ),
+                            line: self.line_of(c.span()),
+                        });
+                    }
                     enum_cases.push(crate::hir::EnumCaseDecl {
                         name: case_name.into(),
                         value,
@@ -1206,7 +1218,7 @@ impl<'f> Lowerer<'f> {
             is_final: true,
             is_readonly: false,
             is_interface: false,
-            props: Vec::new(),
+            props: enum_props(enum_backing.as_ref()),
             static_props: Vec::new(),
             consts,
             methods,
@@ -2165,4 +2177,35 @@ impl<'f> Lowerer<'f> {
             bind_this: true,
         })
     }
+}
+
+/// The properties Zend declares on every enum (`zend_enum_register_props`):
+/// `public readonly string $name` and, on a backed enum, `public readonly
+/// int|string $value` typed by the backing. Declaring them makes reflection
+/// list them and lets the readonly guards cover references, by-ref arguments
+/// and `foreach` by reference; the case objects fill them (`Vm::enum_case`).
+fn enum_props(backing: Option<&crate::hir::EnumBacking>) -> Vec<PropDecl> {
+    use crate::hir::{EnumBacking, HintKind, ScalarType};
+    let prop = |name: &[u8], ty: ScalarType| PropDecl {
+        name: name.into(),
+        visibility: Visibility::Public,
+        set_visibility: None,
+        default: None,
+        hint: Some(TypeHint { kind: HintKind::Scalar(ty), nullable: false }),
+        get_hook: None,
+        set_hook: None,
+        abstract_hooks: Vec::new(),
+        backed: true,
+        readonly: true,
+        attributes: Vec::new(),
+        reflect_type: None,
+        doc: None,
+    };
+    let mut props = vec![prop(b"name", ScalarType::String)];
+    match backing {
+        Some(EnumBacking::Int) => props.push(prop(b"value", ScalarType::Int)),
+        Some(EnumBacking::Str) => props.push(prop(b"value", ScalarType::String)),
+        None => {}
+    }
+    props
 }

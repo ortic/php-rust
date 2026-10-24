@@ -3253,6 +3253,40 @@ fn enum_unset_prop_is_readonly_error() {
     );
 }
 
+#[test]
+fn enum_props_cannot_be_modified_through_references() {
+    // enum/no-{write-properties-through-references,pass-properties-by-ref,
+    // return-properties-by-ref,write-properties-through-foreach-reference}: `name`/
+    // `value` are declared `public readonly`, so every indirect write is refused.
+    assert_eq!(
+        out("<?php enum Foo: int { case Bar = 0; }
+             function setRef(&$r, $v) { $r = $v; }
+             function &getRef() { $b = Foo::Bar; return $b->value; }
+             $w = [
+               function () { $b = Foo::Bar; $v = &$b->value; $v = 1; },
+               function () { $b = Foo::Bar; setRef($b->value, 1); },
+               function () { $v = &getRef(); $v = 1; },
+               function () { $b = Foo::Bar; foreach ([1] as &$b->value) {} },
+             ];
+             foreach ($w as $f) { try { $f(); } catch (Error $e) { echo $e->getMessage(), '|'; } }
+             echo Foo::Bar->value, Foo::Bar->name;"),
+        "Cannot indirectly modify readonly property Foo::$value|Cannot indirectly modify readonly property Foo::$value|\
+         Cannot indirectly modify readonly property Foo::$value|Cannot indirectly modify readonly property Foo::$value|0Bar"
+    );
+}
+
+#[test]
+fn enum_case_value_must_match_backing() {
+    // enum/backed-int-case-without-value, non-backed-enum-with-*-value: compile errors.
+    for (src, msg) in [
+        ("<?php enum Foo: int { case Bar; }", "Case Bar of backed enum Foo must have a value"),
+        ("<?php enum Foo { case Bar = 1; }", "Case Bar of non-backed enum Foo must not have a value"),
+    ] {
+        let r = rendered(src);
+        assert!(r.contains(&format!("Fatal error: {msg} in t.php on line 1")), "{r}");
+    }
+}
+
 // --- Step 24-1: Stringable auto-interface ---
 
 #[test]
