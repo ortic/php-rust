@@ -1,0 +1,39 @@
+EMENDA DICHIARATA del fail-set congelato s109 (file LOCALI non tracciati: wp109-harness/.gitignore ignora corpus-gate/ per
+REGOLE §10; questo .out è il registro auditabile — DA APPLICARE sul Mac al prossimo pre-flight). Causa: nessun supporto del
+formato enum `E:<len>:"<Enum>:<Case>";` (PHP 8.1): `serialize()` scriveva un case come oggetto `O:…` con le sue proprietà
+(un round-trip non restituiva il singleton) e `unserialize()` rifiutava `E:` a offset 0. Cura fuori sessione 2026-10-24
+(richiesta utente: «continua a trovare bug»; branch `fix/enum-serialization`, INDIPENDENTE dagli altri branch del giorno):
+`serialize` (php-builtins/serialize.rs) emette `E:` per un case (numerato come oggetto ⇒ un case ripetuto è `r:N;`, come
+Zend); parser `Ser::Enum` con span del token (unserialize.rs); nuovo modulo vm/unser.rs: `unser_check_enums` replica
+`var_unserializer.re` (nome senza `:` → «Invalid enum name '…' (missing colon)», classe ignota con autoload → «Class '…' not
+found», non-enum → «Class '…' is not an enum» — offset all'INIZIO del token; case ignoto → «Undefined constant E::X»,
+costante non-case → «E::X is not an enum case» — offset alla FINE), poi `unser_enum_case` costruisce il singleton (registrato
+per i `r:`). Dente `serialize_enum_cases` in php-builtins/tests/builtins.rs.
+Ambiente: macchina Linux/WSL (NON il Mac del progetto): php-src 8.5.7 dal tarball php.net, phpt-runner dev-release dal tree
+(profilo dev-release, non il pin), librerie di sistema senza -dev (stub di link locali); corpus sotto tetto di memoria 4G
+(cgroup systemd, OOMPolicy=continue). Baseline dello STESSO runner prima della cura (main f89ae085, senza tetto): 2658 pass ·
+1409 fail · 1238 skip == congelato emendato 22/10 (1409 per modo).
+
+NOMI (fail → pass, da togliere da corpus-s109-{off,on}.fails e da golden-content-{off,on}.tsv): 1409 → 1402 per modo
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/enum/serialization-round-trip.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/enum/serialize.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/enum/unserialize-const.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/enum/unserialize-missing-colon.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/enum/unserialize-non-enum.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/enum/unserialize-non-existent-case.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/enum/unserialize.phpt
+NUOVI FAIL: nessuno (entrambi i modi, PHPR_REG_LOWER=0 e assente=ON); NOMI identici nei due modi.
+SKIP: 1238 → 1238 (nessuno skip cambia esito).
+
+CONTENUTO dei 1402 restanti, prima ↔ dopo (sha256 del chunk, stessa macchina): identico tranne
+  RI-BASARE (atteso): enum/spl-object-storage.phpt (gli enum dentro lo storage ora sono `E:`; resta il formato di
+                              SplObjectStorage, `O:16:"SplObjectStorage":4:{s:24:"SplObjectStorage__objs";…` invece di `:2:{i:0;…}`)
+  carve-out settype_{bool,int,string}_nan_with_error_handler3.phpt (non deterministici, già esclusi dal gate)
+  lazy_objects/gh20873.phpt   flap di timing pre-esistente
+  generators/yield_from_deep_recursion.phpt  «timed out» → «crashed (SIGKILL)»: TETTO 4G di questa macchina, non la cura.
+I golden del Mac NON sono ri-basabili da qui (i chunk portano i path della macchina): replay corpus-gate.sh sul Mac dopo l'emenda.
+Batteria `cargo test --release -j 6` (PHPR_ALLOW_MISSING_ORACLE=1, niente oracle 8.5.7 qui; tetto 6G): 1753/0/2 rc=0
+(1752 + 1 dente nuovo).
+Dente LOC: php-builtins/tests/builtins.rs 4772 → 4790 (cap alzato DICHIARANDO in loc_dente.rs); vm/host.rs e vm/mod.rs restano
+sotto i loro cap (la risoluzione sta nel modulo nuovo vm/unser.rs, 70 righe).
+Catalogo §3.6: offset esatti per i record `E:`; trovato di lato «Extra data starting at offset» (PHP 8.3+) non modellato.

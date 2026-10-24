@@ -567,7 +567,12 @@ chiavi engine-hardwired storiche. Divergenze deliberate:
   non è tracciato; oracle `offset 18 of 18`); `R:` è a parità (verificato
   2026-09-10, `&` incluso nel var_dump) ma `r:` su un non-oggetto NON è
   validato (phpr restituisce `[5, NULL]`, l'oracle fallisce a offset 21); il
-  C:-format con ref interni (bug79031) non è supportato.
+  C:-format con ref interni (bug79031) non è supportato. Eccezione (2026-10-24,
+  branch `fix/enum-serialization`): i record enum `E:` irrisolvibili riportano
+  l'offset di Zend (inizio del token, o fine dopo la ricerca del case). Trovato di
+  lato: dati in CODA a un valore valido (`i:1;XX`) — PHP 8.3+ avvisa «Extra data
+  starting at offset N of M bytes» e RESTITUISCE il valore; phpr rifiuta (false +
+  «Error at offset 0»).
 - `open_basedir` non modellata (gh13856); ReflectionFunction sulle funzioni
   interne non costruisce descriptor (bug74541).
 - Il flusso `phpr -d`: gli override si applicano SOLO alle direttive registrate

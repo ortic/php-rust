@@ -82,6 +82,7 @@ mod ini;
 mod run;
 mod session;
 mod host_reflect;
+mod unser;
 mod oop;
 mod pdo;
 mod mysqli;
@@ -10305,6 +10306,11 @@ impl<'m> Vm<'m> {
                     None => Zval::Null,
                 },
             },
+            Ser::Enum(name, ..) => {
+                let case = self.unser_enum_case(&name).unwrap_or(Zval::Null);
+                ctx.objs.insert(slot, case.clone());
+                case
+            }
             Ser::Null => Zval::Null,
             Ser::Bool(b) => Zval::Bool(b),
             Ser::Long(n) => Zval::Long(n),
