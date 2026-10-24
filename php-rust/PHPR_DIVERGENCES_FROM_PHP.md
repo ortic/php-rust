@@ -1120,6 +1120,21 @@ prima di «E1:», phpr ora al primo Ret dentro il catch — `getMessage()` — i
 nota GC al punto di morte dell'operando (pop dei temp oggetto nei FetchProp/MethodCall su temporaneo, unwind): da
 cercare per NOME nel fail-set congelato prima di toccare il loop caldo.
 
+### 3.37 🟡 `Closure`/`Generator` come oggetti: due residui dopo la cura delle proprietà (2026-10-24)
+
+Curato (branch `fix/closure-generator-props`): `Zval::Closure`/`Zval::Generator` non sono `Zval::Object` e cadevano nei
+messaggi da non-oggetto («Attempt to read/assign/modify property … on Closure»; `&$c->a` riusciva in silenzio). Ora lettura
+= `Warning: Undefined property: Closure::$a`, scrittura/annidata/`[]`/`&`/`++`/`??=` = `Error: Cannot create dynamic property
+Closure::$a` (come le classi final interne senza proprietà dinamiche di Zend). Flip: closures/closure_022,
+closure_write_prop, closure_031, generators/dynamic_properties. RESIDUI aperti:
+- **compound assign** `$c->a .= x` / `+=`: il compilatore emette `Dup, rhs, Swap, PropGet, Swap, Binary, PropSet` (nessun
+  `PropOpSet` per le proprietà d'istanza) ⇒ la lettura avvisa «Undefined property» PRIMA dell'Error giusto; Zend lancia
+  senza avviso (ASSIGN_OBJ_OP → get_property_ptr_ptr). Curarlo costa un op in più sul cammino caldo di ogni compound.
+- **accesso statico** `$c::$x` (e `closures/closure_static_property_error.phpt`, `closure_instantiate.phpt`): phpr dice
+  «Class name must be a valid object or a string» / «Class "Closure" not found» — `Closure`/`Generator` non sono nella
+  tabella delle classi come bersaglio di `::`/`new`; Zend: «Access to undeclared static property Closure::$x»,
+  «Instantiation of class Closure is not allowed».
+
 ## 4. Punti di forza da NON toccare (invarianti verificati byte-identici)
 
 Per evitare regressioni, questi comportamenti sono **già** byte-identici con

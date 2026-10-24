@@ -359,6 +359,9 @@ fn field_write_walk(
                         &owned
                     }
                 };
+                if matches!(other, Zval::Closure(_) | Zval::Generator(_)) {
+                    return Err(no_dynamic_prop_error(other, name));
+                }
                 // PHP 8: writing a property of a non-object is an Error —
                 // a LEAF write is "assign", drilling further is "modify"
                 // (zend_throw_non_object_error's verb split). The incdec

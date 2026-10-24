@@ -12489,9 +12489,13 @@ impl<'m> Vm<'m> {
     /// The fatal raised by a compound write (`+=`, `++`, …) to a `readonly`
     /// property: always an error — "Cannot modify readonly property" once
     /// initialised, or the before-initialization fatal if the implicit read of an
-    /// uninitialised one comes first. `None` for a non-readonly property.
+    /// uninitialised one comes first. `None` for a non-readonly property. A
+    /// `Closure`/`Generator` receiver errs here too, before the implicit read.
     fn readonly_rmw_error(&self, obj: &Zval, key: &[u8], name: &[u8]) -> Option<PhpError> {
         let target = obj.deref_clone();
+        if matches!(target, Zval::Closure(_) | Zval::Generator(_)) {
+            return Some(no_dynamic_prop_error(&target, name));
+        }
         let Zval::Object(o) = &target else { return None };
         let ocid = o.borrow().class_id as usize;
         let decl = prop_readonly_decl(&self.classes, ocid, name)?;
@@ -18035,8 +18039,13 @@ fn field_walk(
     match &steps[i] {
         FieldStep::Prop(_) | FieldStep::PropDyn => {
             // `&$o->prop` / `&$o->$n` (Session A / step 51): promote the property to
-            // a shared cell. A non-object yields a detached cell (PHP warns).
+            // a shared cell. A non-object yields a detached cell (PHP warns);
+            // a Closure/Generator cannot create the property.
             let Zval::Object(o) = target else {
+                if matches!(target, Zval::Closure(_) | Zval::Generator(_)) {
+                    let name = if let FieldStep::Prop(n) = &steps[i] { n.to_vec().into() } else { prop_dyn_name(keys, &mut Diags::new()) };
+                    return Err(no_dynamic_prop_error(target, &name));
+                }
                 return Ok(CellWalk::Done(php_types::zcell(Zval::Null)));
             };
             Ok(CellWalk::IntoObj(Rc::clone(o), i))
