@@ -4492,25 +4492,17 @@ impl<'m> super::Vm<'m> {
                 }
                 Op::Clone => {
                     let src = self.frames[top].stack.pop().expect("Clone operand").deref_clone();
+                    // Closures clone; generators, enum cases, opaque handles refuse.
+                    if let Some(c) = self.clone_special(&src)? {
+                        self.frames[top].stack.push(c);
+                        continue;
+                    }
                     let Zval::Object(o) = &src else {
                         return Err(PhpError::TypeError(format!(
                             "clone(): Argument #1 ($object) must be of type object, {} given",
                             src.type_name_for_error()
                         )));
                     };
-                    // Opaque handle classes (GdImage) are uncloneable, like
-                    // their internal PHP counterparts.
-                    if crate::vm::is_opaque_handle_class(o.borrow().class_name.as_bytes()) {
-                        let msg = format!(
-                            "Trying to clone an uncloneable object of class {}",
-                            String::from_utf8_lossy(o.borrow().class_name.as_bytes())
-                        );
-                        if let Some(cid) = self.class_index.get(&b"error"[..]).copied() {
-                            let obj = self.synthesize_throwable(cid, &msg)?;
-                            return Err(PhpError::Thrown(obj));
-                        }
-                        return Err(PhpError::Error(msg));
-                    }
                     // Cloning a lazy object initializes it first (PHP 8.4,
                     // clone_initializes). An initialized proxy then clones as a
                     // NEW initialized proxy wrapping a clone of its real
