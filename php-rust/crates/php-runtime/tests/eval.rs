@@ -2087,6 +2087,32 @@ fn oop_closure_bind_static() {
 }
 
 #[test]
+fn oop_closure_generator_have_no_dynamic_props() {
+    // closures/closure_022, closure_write_prop, closure_031: Closure and Generator are
+    // final classes with no dynamic properties — never the non-object messages.
+    // (`$c->a .= x` still warns "Undefined property" first: catalogue §3.37.)
+    assert_eq!(
+        rendered("<?php $c = function () {};\n$x = $c->a;\necho $x === null ? 'null' : 'set', isset($c->a) ? '|isset' : '|unset';\n"),
+        "\nWarning: Undefined property: Closure::$a in t.php on line 2\nnull|unset"
+    );
+    assert_eq!(
+        out("<?php $c = function () {}; $g = (function () { yield 1; })(); $n = 'b';
+             $w = [
+               function () use ($c) { $c->a = 1; },
+               function () use ($c) { $c->a ??= 'x'; },
+               function () use ($c) { $c->a++; },
+               function () use ($c) { $c->a[] = 1; },
+               function () use ($c, $n) { $r = &$c->$n; },
+               function () use ($g) { $g->a->b = 1; },
+             ];
+             foreach ($w as $f) { try { $f(); } catch (Error $e) { echo $e->getMessage(), '|'; } }"),
+        "Cannot create dynamic property Closure::$a|Cannot create dynamic property Closure::$a|\
+         Cannot create dynamic property Closure::$a|Cannot create dynamic property Closure::$a|\
+         Cannot create dynamic property Closure::$b|Cannot create dynamic property Generator::$a|"
+    );
+}
+
+#[test]
 fn oop_closure_from_callable_string() {
     assert_eq!(
         out("<?php function dbl($x) { return $x * 2; } $f = Closure::fromCallable('dbl'); echo $f(21);"),

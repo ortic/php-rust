@@ -16,6 +16,11 @@ pub(super) fn read_property(recv: &Zval, name: &[u8], diags: &mut Diags) -> Zval
             Zval::Null
         }
         Zval::Ref(rc) => read_property(&rc.borrow(), name, diags),
+        Zval::Closure(_) | Zval::Generator(_) => {
+            let prop = String::from_utf8_lossy(name).into_owned();
+            diags.push(Diag::Warning(format!("Undefined property: {}::${prop}", recv.error_type_name())));
+            Zval::Null
+        }
         Zval::Null | Zval::Undef => {
             let prop = String::from_utf8_lossy(name).into_owned();
             diags.push(Diag::Warning(format!("Attempt to read property \"{prop}\" on null")));
@@ -54,12 +59,25 @@ pub(super) fn write_property(recv: &Zval, name: &[u8], value: Zval) -> Result<Op
             Ok(o.borrow_mut().props.replace(name, value))
         }
         Zval::Ref(rc) => write_property(&rc.borrow(), name, value),
+        Zval::Closure(_) | Zval::Generator(_) => Err(no_dynamic_prop_error(recv, name)),
         other => Err(PhpError::Error(format!(
             "Attempt to assign property \"{}\" on {}",
             String::from_utf8_lossy(name),
             other.type_name_for_error()
         ))),
     }
+}
+
+/// `Closure` and `Generator` are objects of final internal classes with no
+/// declared and no dynamic properties: a read warns "Undefined property"
+/// (above), every write — assign, compound, `++`, `[]`, `&` — is this Error,
+/// never the non-object "Attempt to … property" text.
+pub(super) fn no_dynamic_prop_error(recv: &Zval, name: &[u8]) -> PhpError {
+    PhpError::Error(format!(
+        "Cannot create dynamic property {}::${}",
+        recv.error_type_name(),
+        String::from_utf8_lossy(name)
+    ))
 }
 
 /// Slot-aware twin of [`read_property`] (WP-29): a resolved slot index reads

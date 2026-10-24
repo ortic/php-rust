@@ -1,0 +1,33 @@
+EMENDA DICHIARATA del fail-set congelato s109 (file LOCALI non tracciati: wp109-harness/.gitignore ignora corpus-gate/ per
+REGOLE §10; questo .out è il registro auditabile — DA APPLICARE sul Mac al prossimo pre-flight). Causa: `Zval::Closure` e
+`Zval::Generator` non sono `Zval::Object` e cadevano nei rami da non-oggetto degli accessi a proprietà («Attempt to
+read/assign/modify property "a" on Closure»; `&$c->a` riusciva in silenzio con una cella staccata). Zend: classi final interne
+senza proprietà dinamiche ⇒ lettura `Warning: Undefined property: Closure::$a`, ogni scrittura `Error: Cannot create dynamic
+property Closure::$a`. Cura fuori sessione 2026-10-24 (richiesta utente: «continua a trovare bug»; branch
+`fix/closure-generator-props`, INDIPENDENTE dagli altri branch del giorno): `read_property`/`write_property` (oop.rs) + helper
+`no_dynamic_prop_error`, write walk delle proprietà (arrays.rs), `readonly_rmw_error` (`++`/`--`, prima della lettura) e
+`field_walk` (`&$c->a`, mod.rs). Dente `oop_closure_generator_have_no_dynamic_props` in tests/eval.rs.
+Ambiente: macchina Linux/WSL (NON il Mac del progetto): php-src 8.5.7 dal tarball php.net, phpt-runner dev-release dal tree
+(profilo dev-release, non il pin), librerie di sistema senza -dev (stub di link locali); corpus sotto tetto di memoria 4G
+(cgroup systemd, OOMPolicy=continue). Baseline dello STESSO runner prima della cura (main f89ae085, senza tetto): 2658 pass ·
+1409 fail · 1238 skip == congelato emendato 22/10 (1409 per modo).
+
+NOMI (fail → pass, da togliere da corpus-s109-{off,on}.fails e da golden-content-{off,on}.tsv): 1409 → 1405 per modo
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/closures/closure_022.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/closures/closure_031.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/closures/closure_write_prop.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/generators/dynamic_properties.phpt
+NUOVI FAIL: nessuno (entrambi i modi, PHPR_REG_LOWER=0 e assente=ON); NOMI identici nei due modi.
+SKIP: 1238 → 1238 (nessuno skip cambia esito).
+
+CONTENUTO dei 1405 restanti, prima ↔ dopo (sha256 del chunk, stessa macchina): identico tranne
+  carve-out settype_{bool,int,string}_nan_with_error_handler3.phpt (non deterministici, già esclusi dal gate)
+  lazy_objects/gh20873.phpt   crash ↔ timeout fra i due modi, flap di timing pre-esistente
+  generators/yield_from_deep_recursion.phpt  «timed out» → «crashed (SIGKILL)»: è il TETTO 4G di questa macchina, non la
+                              cura (già registrato in s186-corpus-emenda-2026-10-24-offset-type.out); fallisce già su main.
+I golden del Mac NON sono ri-basabili da qui (i chunk portano i path della macchina): replay corpus-gate.sh sul Mac dopo l'emenda.
+Batteria `cargo test --release -j 6` (PHPR_ALLOW_MISSING_ORACLE=1, niente oracle 8.5.7 qui; tetto 6G): 1753/0/2 rc=0 (1752 + 1 dente nuovo).
+Dente LOC: vm/arrays.rs 2167 → 2170, tests/eval.rs 4773 → 4799 (cap alzati DICHIARANDO in loc_dente.rs); vm/mod.rs resta
+sotto il suo cap (26075: aggiunta compressa). Se si fondono anche gli altri branch del 24/10 i denti di eval.rs e arrays.rs si
+sommano.
+Catalogo: nuova §3.37 (curato + due residui: compound assign `$c->a .= x` avvisa prima dell'Error; `$c::$x`/`new Closure`).
