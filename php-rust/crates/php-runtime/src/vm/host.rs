@@ -4411,18 +4411,18 @@ impl<'m> super::Vm<'m> {
         let arg0 = first.deref_clone();
         let bytes = convert::to_zstr_cast(&arg0, &mut self.diags);
         let nbytes = bytes.as_bytes().len();
-        match crate::unserialize::parse(bytes.as_bytes()) {
-            Some(s) => self.vm_ser_to_zval(s),
-            None => {
-                // PHP reports the failing offset; we do not track it, so report 0
-                // (matches `eval`, D-50).
-                self.diags.push(Diag::Warning(format!(
-                    "unserialize(): Error at offset 0 of {nbytes} bytes"
-                )));
-                Ok(Zval::Bool(false))
-            }
-        }
+        // Syntax error: offset 0 (untracked, D-50); bad enum case: Zend's offset (`unser_check_enums`).
+        let failed_at = match crate::unserialize::parse(bytes.as_bytes()) {
+            Some(s) => match self.unser_check_enums(&s)? {
+                None => return self.vm_ser_to_zval(s),
+                Some(off) => off,
+            },
+            None => 0,
+        };
+        self.diags.push(Diag::Warning(format!("unserialize(): Error at offset {failed_at} of {nbytes} bytes")));
+        Ok(Zval::Bool(false))
     }
+
     pub(super) fn ho_debug_backtrace(&mut self, args: &[Zval]) -> Result<Zval, PhpError> {
         // PHP 8.5: debug_backtrace(int $options = DEBUG_BACKTRACE_PROVIDE_OBJECT,
         // int $limit = 0). BT1 (S-149): prima options/limit erano IGNORATI —

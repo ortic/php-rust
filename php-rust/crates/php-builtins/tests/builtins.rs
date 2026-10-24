@@ -3855,6 +3855,24 @@ fn serialize_unserialize_roundtrip_values() {
     assert_eq!(out(prog), "a:3:{i:0;i:1;s:1:\"a\";d:2.5;i:3;a:2:{i:0;b:1;i:1;N;}}");
 }
 
+/// Enum cases serialize as `E:` records (Zend/tests/enum/serialize, unserialize*,
+/// serialization-round-trip): a repeat is `r:`, and an unresolvable record warns
+/// with Zend's own offset (token start before the case lookup, end after).
+#[test]
+fn serialize_enum_cases() {
+    let prog = "<?php enum Foo { case Bar; const C = 1; } enum B: int { case I = 7; }
+        $s = serialize([Foo::Bar, Foo::Bar, B::I]); echo $s, '|';
+        $u = unserialize($s); var_dump($u[0] === Foo::Bar && $u[1] === Foo::Bar && $u[2] === B::I);";
+    assert_eq!(out(prog), "a:3:{i:0;E:7:\"Foo:Bar\";i:1;r:2;i:2;E:3:\"B:I\";}|bool(true)\n");
+    assert_eq!(
+        rendered("<?php enum Foo { case Bar; const C = 1; }\nvar_dump(unserialize('a:1:{i:0;E:5:\"Foo:C\";}'));\nvar_dump(unserialize('E:6:\"FooBar\";'));\n"),
+        "\nWarning: unserialize(): Foo::C is not an enum case in t.php on line 2\n\
+         \nWarning: unserialize(): Error at offset 21 of 22 bytes in t.php on line 2\nbool(false)\n\
+         \nWarning: unserialize(): Invalid enum name 'FooBar' (missing colon) in t.php on line 3\n\
+         \nWarning: unserialize(): Error at offset 0 of 13 bytes in t.php on line 3\nbool(false)\n"
+    );
+}
+
 // ---- step 51a: fopen / fread / fwrite / fclose on real files + Resource type ----
 
 /// A unique path under the system temp dir for a single test (avoids collisions

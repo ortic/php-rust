@@ -5,6 +5,7 @@
 //! Grammar handled (the subset `serialize()` emits):
 //!   N;  b:[01];  i:<int>;  d:<float>;  s:<len>:"<bytes>";
 //!   a:<n>:{<k><v>...}      O:<len>:"<class>":<n>:{<propname><v>...}
+//!   E:<len>:"<Enum>:<Case>";   (enum case, PHP 8.1)
 //!
 //! Shared-reference markers: `r:<n>;` (repeat of the object numbered `n`) and
 //! `R:<n>;` (alias of the value slot numbered `n`) parse to [`Ser::ObjRef`] /
@@ -31,6 +32,10 @@ pub enum Ser {
     ObjRef(i64),
     /// `R:<n>;` — a reference aliasing the value slot numbered `n`.
     AliasRef(i64),
+    /// `E:<len>:"<Enum>:<Case>";` — an enum case, unresolved: the raw
+    /// `Enum:Case` bytes plus the token's start / end byte offsets, which
+    /// Zend's error offset reports (start before the case lookup, end after).
+    Enum(Vec<u8>, usize, usize),
 }
 
 /// Parse a complete serialized value. Returns `None` on any malformed input or
@@ -212,6 +217,18 @@ impl Parser<'_> {
                 self.i += len;
                 self.eat(b'}')?;
                 Some(Ser::CObject(class, payload))
+            }
+            b'E' => {
+                // Enum case: the evaluator resolves `Enum:Case` (with Zend's
+                // warnings); an empty name is a syntax error, like `len == 0`.
+                let start = self.i;
+                self.i += 1;
+                self.eat(b':')?;
+                let name = self.string_body()?;
+                if name.is_empty() {
+                    return None;
+                }
+                Some(Ser::Enum(name, start, self.i))
             }
             _ => None,
         }

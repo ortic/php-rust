@@ -8,6 +8,7 @@
 //!   s:<bytelen>:"<bytes>";   string (byte length, raw bytes)
 //!   a:<n>:{<k><v>...};       array (n key/value pairs, in order)
 //!   O:<len>:"<class>":<n>:{<propname-str><v>...};   object
+//!   E:<len>:"<Enum>:<Case>";  enum case
 //!
 //! `unserialize()` is the evaluator-dispatched inverse (step 50b): it must
 //! instantiate objects, which a pure builtin cannot reach.
@@ -144,6 +145,21 @@ fn ser_body(out: &mut Vec<u8>, v: &Zval, sc: &mut SerCtx) -> Result<(), PhpError
         Zval::Object(o) => {
             let obj = o.borrow();
             let cname = obj.class_name.as_bytes();
+            // An enum case is `E:<len>:"<Enum>:<Case>";` (PHP 8.1), never its
+            // `name`/`value` properties.
+            if obj.info.is_enum_case {
+                let mut name = cname.to_vec();
+                name.push(b':');
+                if let Some(Zval::Str(case)) = obj.props.get(b"name") {
+                    name.extend_from_slice(case.as_bytes());
+                }
+                out.extend_from_slice(b"E:");
+                out.extend_from_slice(name.len().to_string().as_bytes());
+                out.extend_from_slice(b":\"");
+                out.extend_from_slice(&name);
+                out.extend_from_slice(b"\";");
+                return Ok(());
+            }
             // A record staged by the VM for a legacy `Serializable` object
             // (its `serialize()` already produced the raw payload): emit
             // `C:<len>:"<class>":<len>:{<payload>}`; a missing payload (PHP:
