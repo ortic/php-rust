@@ -2087,6 +2087,21 @@ fn oop_closure_bind_static() {
 }
 
 #[test]
+fn oop_closure_bind_unknown_scope_warns_null() {
+    // Zend/tests/closures/bug78658.phpt: an unknown scope class warns AT the
+    // call (its line; a throwing handler unwinds there) and the bind is null.
+    assert_eq!(
+        rendered("<?php $f = function() {};\n$g = $f->bindTo(null, 'Nope');\necho $g === null ? 'null' : 'closure';\n"),
+        "\nWarning: Class \"Nope\" not found in t.php on line 2\nnull"
+    );
+    assert_eq!(
+        out("<?php set_error_handler(function($n, $s) { throw new Exception($s); }); $r = 'unset'; \
+             try { $r = Closure::bind(function() {}, null, 'Nope'); } catch (Exception $e) { echo $e->getMessage(), '|'; } echo $r;"),
+        "Class \"Nope\" not found|unset"
+    );
+}
+
+#[test]
 fn oop_closure_from_callable_string() {
     assert_eq!(
         out("<?php function dbl($x) { return $x * 2; } $f = Closure::fromCallable('dbl'); echo $f(21);"),

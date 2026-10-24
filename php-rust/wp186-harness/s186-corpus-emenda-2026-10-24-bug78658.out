@@ -1,0 +1,29 @@
+EMENDA DICHIARATA del fail-set congelato s109 (file LOCALI non tracciati: wp109-harness/.gitignore ignora corpus-gate/ per
+REGOLE §10; questo .out è il registro auditabile — DA APPLICARE sul Mac al prossimo pre-flight). Causa: `resolve_scope_arg`
+(vm/calls.rs) cercava la classe-scope di `Closure::bind`/`bindTo` solo in `class_index`, senza autoload e senza diagnostico ⇒
+con un nome di classe ignoto il bind restituiva una closure (scope NULL) invece di `Warning: Class "X" not found` + `null`
+(Zend `do_closure_bind`: `zend_lookup_class` con autoload, poi E_WARNING + RETURN_NULL). Cura fuori sessione 2026-10-24
+(richiesta utente: «controlla un altro test phpt che fallisce e crea un altro branch»; branch `fix/closure-bind-unknown-scope`,
+INDIPENDENTE da `fix/enum-class-scope`), dente `oop_closure_bind_unknown_scope_warns_null` in tests/eval.rs. Il warning (e quello
+«Cannot bind an instance to a static closure») ora è emesso AL op chiamante (`bind_warning` → `flush_diags`): riga giusta e un
+error handler che lancia srotola da lì, come in Zend (prima il flush a fine istruzione arrivava dopo l'assegnazione).
+Ambiente: macchina Linux/WSL (NON il Mac del progetto): php-src 8.5.7 dal tarball php.net, phpt-runner dev-release dal tree
+(profilo dev-release, non il pin), librerie di sistema senza -dev (stub di link locali). Baseline dello STESSO runner prima della
+cura (main f89ae085): 2658 pass · 1409 fail · 1238 skip == congelato emendato 22/10 (1409 per modo).
+
+NOMI (fail → pass, da togliere da corpus-s109-{off,on}.fails e da golden-content-{off,on}.tsv): 1409 → 1408 per modo
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/closures/bug78658.phpt
+NUOVI FAIL: nessuno (entrambi i modi, PHPR_REG_LOWER=0 e assente=ON); NOMI identici nei due modi.
+SKIP: 1238 → 1238 (nessuno skip cambia esito).
+
+CONTENUTO dei 1408 restanti, prima ↔ dopo (sha256 del chunk, stessa macchina): identico tranne
+  carve-out settype_{bool,int,string}_nan_with_error_handler3.phpt (non deterministici, già esclusi dal gate)
+  bug30922.phpt               «crashed (SIGABRT)» ↔ «isolated worker timed out»: interfaccia che estende sé stessa, NESSUNA closure;
+  lazy_objects/gh20873.phpt   idem (ricorsione fuori controllo: crash o cap di 10 s secondo il carico) — flap di timing, pre-esistenti
+                              (stesso flap già registrato in s186-corpus-emenda-2026-10-24.out del branch enum).
+I golden del Mac NON sono ri-basabili da qui (i chunk portano i path della macchina): replay corpus-gate.sh sul Mac dopo l'emenda.
+Batteria `cargo test --release` (PHPR_ALLOW_MISSING_ORACLE=1, niente oracle 8.5.7 qui): 1753/0/2 rc=0 (1752 + 1 dente nuovo).
+Dente LOC: tests/eval.rs 4773 → 4788 (cap alzato DICHIARANDO in loc_dente.rs). Se si fonde anche `fix/enum-class-scope`
+(eval.rs 4795 là): i due denti si sommano, cap = 4773 + 22 + 15 = 4810.
+FUORI OGGETTO, trovato di lato: `bindTo(null, "stdClass")` (scope = classe interna) deve dare `Warning: Cannot bind closure to
+scope of internal class stdClass` + null (Zend `zend_valid_closure_binding`); phpr restituisce una closure — NON curato qui.
