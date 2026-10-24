@@ -90,7 +90,7 @@ fn nessun_sorgente_rs_oltre_cap() {
         // (sweep_idle/sweep_skip_next + 5 siti in place + back-edge fuso, commenti
         // inclusi), cap alzato DICHIARANDO prima della promozione (differita: Data).
         ("php-runtime/src/vm/run.rs", 7551, "run_loop — ULTIMO o mai (A2); +8 cura §3.35 2026-10-22 (hook `gc_sweep_after_ret` nel Ret fuso e in `ret_slow`, cap alzato DICHIARANDO); +52 L-MR1+L-MC2 S-185 «Ret fuso dei metodi + MethodCall in pila» (criterio wp185-harness/s185-criterio-mc2.md, cap alzato DICHIARANDO prima della misura) · +58 L-RT2 S-184 «Ret fuso» forma 2 (criterio wp184-harness/s184-criterio-rt2.md p.7: fast path inline + `ret_slow` fuori linea, cap alzato DICHIARANDO prima della misura) · +29 L-RT1 S-183 «Ret in place» (criterio wp182-harness/s183-criterio-rt1.md, cap alzato DICHIARANDO prima della misura) · +102 L-MCk S-166 + 174 L-SL1 S-171 + 109 L-SL2 S-172 + 74 fetta 3 S-173 + 87 Sweep-in-op S-174 + 11 flag gc-idle S-176 (DICHIARATO S-180) + 32 L-CR1 S-181 (DICHIARATO) dichiarati"),
-        ("php-runtime/tests/eval.rs", 4773, "batteria eval"),
+        ("php-runtime/tests/eval.rs", 4788, "batteria eval; +15 dente `oop_closure_bind_unknown_scope_warns_null` 2026-10-24 (cap alzato DICHIARANDO)"),
         ("php-builtins/tests/builtins.rs", 4772, "batteria builtins"),
         ("php-runtime/src/lower/mod.rs", 3838, "lowering"),
         ("php-runtime/src/vm/dom.rs", 3641, "ponte DOM"),

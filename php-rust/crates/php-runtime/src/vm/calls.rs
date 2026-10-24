@@ -795,36 +795,52 @@ impl<'m> Vm<'m> {
         }))
     }
 
-    /// Resolve the `$newScope` argument of `Closure::bind`/`bindTo`. Returns
-    /// `None` to *keep* the closure's current scope (argument omitted, or the
-    /// sentinel string `"static"`); `Some(None)` for an explicit unscoped binding;
-    /// and `Some(Some(class_id))` for an object (its class) or a class-name string.
-    fn resolve_scope_arg(&self, v: Option<Zval>) -> Option<Option<usize>> {
-        match v.map(|v| v.deref_clone()) {
+    /// Resolve the `$newScope` argument of `Closure::bind`/`bindTo`. The inner
+    /// value is `None` to *keep* the closure's current scope (argument omitted, or
+    /// the sentinel string `"static"`); `Some(None)` for an explicit unscoped
+    /// binding; and `Some(Some(class_id))` for an object (its class) or a
+    /// class-name string, autoloaded like Zend's `zend_lookup_class`. An unknown
+    /// class name warns and yields `Ok(None)`: the bind returns `null`.
+    fn resolve_scope_arg(&mut self, v: Option<Zval>) -> Result<Option<Option<Option<usize>>>, PhpError> {
+        Ok(Some(match v.map(|v| v.deref_clone()) {
             None => None,
             Some(Zval::Str(s)) if s.as_bytes().eq_ignore_ascii_case(b"static") => None,
             Some(Zval::Null) => Some(None),
             Some(Zval::Object(o)) => Some(Some(o.borrow().class_id as usize)),
-            Some(Zval::Str(s)) => {
-                let b = s.as_bytes();
-                let lc = b.strip_prefix(b"\\").unwrap_or(b).to_ascii_lowercase();
-                Some(self.class_index.get(&lc[..]).copied())
-            }
+            Some(Zval::Str(s)) => match self.resolve_class_autoload(s.as_bytes())? {
+                Some(id) => Some(Some(id)),
+                None => {
+                    self.bind_warning(format!(
+                        "Class \"{}\" not found",
+                        String::from_utf8_lossy(s.as_bytes())
+                    ))?;
+                    return Ok(None);
+                }
+            },
             Some(_) => None,
-        }
+        }))
+    }
+
+    /// Raise a bind warning AT the calling op (its line, and a throwing error
+    /// handler unwinds from here): the closure methods run natively in the
+    /// caller's frame, and the statement-end flush would be too late.
+    fn bind_warning(&mut self, message: String) -> Result<(), PhpError> {
+        self.diags.push(Diag::Warning(message));
+        let line = self.cur_line(self.frames.len() - 1);
+        self.flush_diags(line)
     }
 
     /// A static closure cannot take an instance `$this`; `bindTo`/`bind`/`call`
     /// with a non-null instance warns and yields `null` (step 19-6, PHP 8.x).
-    fn reject_static_bind(&mut self, cl: &Closure, new_this: &Option<Zval>) -> bool {
+    fn reject_static_bind(&mut self, cl: &Closure, new_this: &Option<Zval>) -> Result<bool, PhpError> {
         if cl.is_static && new_this.is_some() {
-            self.diags.push(Diag::Warning(
+            self.bind_warning(
                 "Cannot bind an instance to a static closure, this will be an error in PHP 9"
                     .to_string(),
-            ));
-            true
+            )?;
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     }
 
@@ -840,8 +856,8 @@ impl<'m> Vm<'m> {
         if method.eq_ignore_ascii_case(b"bindTo") {
             let mut it = args.into_iter();
             let new_this = Self::closure_this_arg(it.next());
-            let scope = self.resolve_scope_arg(it.next());
-            if self.reject_static_bind(cl, &new_this) {
+            let Some(scope) = self.resolve_scope_arg(it.next())? else { return Ok(Zval::Null) };
+            if self.reject_static_bind(cl, &new_this)? {
                 return Ok(Zval::Null);
             }
             Ok(self.rebind_closure(cl, new_this, scope))
@@ -850,7 +866,7 @@ impl<'m> Vm<'m> {
             // class of `$newThis`, then invokes (step 19-6).
             let mut it = args.into_iter();
             let new_this = Self::closure_this_arg(it.next());
-            if self.reject_static_bind(cl, &new_this) {
+            if self.reject_static_bind(cl, &new_this)? {
                 return Ok(Zval::Null);
             }
             let scope = Some(new_this.as_ref().and_then(object_class_id));
@@ -876,10 +892,10 @@ impl<'m> Vm<'m> {
             let mut it = args.into_iter();
             let target = it.next().map(|v| v.deref_clone());
             let new_this = Self::closure_this_arg(it.next());
-            let scope = self.resolve_scope_arg(it.next());
             match target {
                 Some(Zval::Closure(cl)) => {
-                    if self.reject_static_bind(&cl, &new_this) {
+                    let Some(scope) = self.resolve_scope_arg(it.next())? else { return Ok(Zval::Null) };
+                    if self.reject_static_bind(&cl, &new_this)? {
                         return Ok(Zval::Null);
                     }
                     Ok(self.rebind_closure(&cl, new_this, scope))
