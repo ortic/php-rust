@@ -760,6 +760,31 @@ impl<'m> Vm<'m> {
         }
     }
 
+    /// The `clone` operands the plain object copy does not handle: a closure
+    /// clones into a fresh closure (Zend `zend_closure_clone`: new handle, same
+    /// `$this`/scope, by-ref captures still shared — `bindTo` with no change); a
+    /// generator, an enum case or an opaque handle class (GdImage) has no clone
+    /// handler and is "uncloneable". `None` = the ordinary object path.
+    pub(super) fn clone_special(&mut self, src: &Zval) -> Result<Option<Zval>, PhpError> {
+        let cls = match src {
+            Zval::Closure(cl) => return Ok(Some(self.rebind_closure(cl, cl.bound_this.clone(), None))),
+            Zval::Generator(_) => "Generator".to_string(),
+            Zval::Object(o) => {
+                let b = o.borrow();
+                if !b.info.is_enum_case && !crate::vm::is_opaque_handle_class(b.class_name.as_bytes()) {
+                    return Ok(None);
+                }
+                String::from_utf8_lossy(b.class_name.as_bytes()).into_owned()
+            }
+            _ => return Ok(None),
+        };
+        let msg = format!("Trying to clone an uncloneable object of class {cls}");
+        if let Some(cid) = self.class_index.get(&b"error"[..]).copied() {
+            return Err(PhpError::Thrown(self.synthesize_throwable(cid, &msg)?));
+        }
+        Err(PhpError::Error(msg))
+    }
+
     /// Build a copy of `cl` with a new bound `$this`, optional new class scope,
     /// and a fresh object id (step 19-6, mirrors `eval::rebind_closure`).
     /// `new_scope` of `None` keeps the closure's current scope; `Some(s)` sets it
@@ -771,6 +796,13 @@ impl<'m> Vm<'m> {
         new_scope: Option<Option<usize>>,
     ) -> Zval {
         let id = self.next_id();
+        // The copy starts from the current values of the closure's `static`
+        // variables, duplicated by value (Zend zend_create_closure_ex).
+        let statics: Vec<(u32, Zval)> =
+            self.closure_statics.iter().filter(|((c, _), _)| *c == cl.id).map(|((_, s), v)| (*s, v.borrow().clone())).collect();
+        for (s, v) in statics {
+            self.closure_statics.insert((id, s), php_types::zcell(v));
+        }
         // Rebinding also moves `static::`: a bound object's class wins, else
         // an explicit new scope, else the closure's original LSB.
         let lsb = match &bound_this {

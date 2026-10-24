@@ -1,0 +1,34 @@
+EMENDA DICHIARATA del fail-set congelato s109 (file LOCALI non tracciati: wp109-harness/.gitignore ignora corpus-gate/ per
+REGOLE §10; questo .out è il registro auditabile — DA APPLICARE sul Mac al prossimo pre-flight). Causa: `Op::Clone` accettava
+solo `Zval::Object` ⇒ `clone $closure` dava «TypeError: clone(): Argument #1 ($object) must be of type object, Closure given»
+(Zend: la closure si clona, `zend_closure_clone`), `clone $generator` lo stesso TypeError (Zend: «Trying to clone an uncloneable
+object of class Generator»), e `clone Foo::Bar` restituiva il case (Zend: uncloneable). Trovato di lato e curato insieme: una
+copia di closure (clone, `bindTo`, `Closure::bind`) ripartiva con le variabili `static` VUOTE — `closure_statics` è indicizzata
+per id d'istanza e la copia ha un id nuovo; Zend (`zend_create_closure_ex`) le duplica per valore.
+Cura fuori sessione 2026-10-24 (richiesta utente: «continua a trovare bug»; branch `fix/clone-closure-uncloneable`,
+INDIPENDENTE dagli altri branch del giorno): `Vm::clone_special` (calls.rs) — closure → `rebind_closure` con stesso `$this` e
+scope; Generator / case enum / classe opaca (GdImage) → Error «uncloneable»; `Op::Clone` (run.rs) lo chiama e perde il blocco
+GdImage inline (run.rs 7551 → 7543 righe, -8); `rebind_closure` copia gli statics della closure sorgente nell'id nuovo.
+Dente `clone_closure_and_uncloneables` in tests/eval.rs.
+Ambiente: macchina Linux/WSL (NON il Mac del progetto): php-src 8.5.7 dal tarball php.net, phpt-runner dev-release dal tree
+(profilo dev-release, non il pin), librerie di sistema senza -dev (stub di link locali); corpus sotto tetto di memoria 4G
+(cgroup systemd, OOMPolicy=continue). Baseline dello STESSO runner prima della cura (main f89ae085, senza tetto): 2658 pass ·
+1409 fail · 1238 skip == congelato emendato 22/10 (1409 per modo).
+
+NOMI (fail → pass, da togliere da corpus-s109-{off,on}.fails e da golden-content-{off,on}.tsv): 1409 → 1406 per modo
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/closures/closure_024.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/enum/no-clone.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/generators/clone.phpt
+NUOVI FAIL: nessuno (entrambi i modi, PHPR_REG_LOWER=0 e assente=ON); NOMI identici nei due modi.
+SKIP: 1238 → 1238 (nessuno skip cambia esito).
+
+CONTENUTO dei 1406 restanti, prima ↔ dopo (sha256 del chunk, stessa macchina): identico tranne
+  carve-out settype_{bool,int,string}_nan_with_error_handler3.phpt (non deterministici, già esclusi dal gate)
+  lazy_objects/gh20873.phpt   flap di timing pre-esistente
+  generators/yield_from_deep_recursion.phpt  «timed out» → «crashed (SIGKILL)»: TETTO 4G di questa macchina, non la cura.
+I golden del Mac NON sono ri-basabili da qui (i chunk portano i path della macchina): replay corpus-gate.sh sul Mac dopo l'emenda.
+Batteria `cargo test --release -j 6` (PHPR_ALLOW_MISSING_ORACLE=1, niente oracle 8.5.7 qui; tetto 6G): 1753/0/2 rc=0
+(1752 + 1 dente nuovo).
+Sonde vs oracle: clone di closure (`$this` legato, statics, first-class callable, use per valore/riferimento, ===) e statics
+dopo `bindTo`/`Closure::bind` — identiche.
+Dente LOC: tests/eval.rs 4773 → 4789 (cap alzato DICHIARANDO in loc_dente.rs); vm/run.rs SCENDE di 8 righe (cap 7551 invariato).

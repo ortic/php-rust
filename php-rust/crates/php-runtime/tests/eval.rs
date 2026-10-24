@@ -2094,6 +2094,22 @@ fn oop_closure_from_callable_string() {
     );
 }
 
+#[test]
+fn clone_closure_and_uncloneables() {
+    // closures/closure_024 (a clone is a new closure sharing by-ref captures, its
+    // statics copied — as for bindTo), generators/clone and enum/no-clone.
+    assert_eq!(
+        out("<?php $a = 1; $c = function ($x) use (&$a) { return $a + $x; }; $cc = clone $c;
+             $a++; echo $c(10), ' ', $cc(10), ' ', $c === $cc ? 'same' : 'distinct', '|';
+             $s = function () { static $n = 0; return ++$n; }; $s(); $t = clone $s; $b = $s->bindTo(null);
+             echo $t(), $b(), $s(), '|';
+             enum E { case A; } function g() { yield; }
+             foreach ([E::A, g()] as $v) { try { clone $v; } catch (Error $e) { echo $e->getMessage(), '|'; } }"),
+        "12 12 distinct|222|Trying to clone an uncloneable object of class E|\
+         Trying to clone an uncloneable object of class Generator|"
+    );
+}
+
 // --- step 20-1: exceptions — throw, try/catch, hierarchy, accessors ---
 
 #[test]
