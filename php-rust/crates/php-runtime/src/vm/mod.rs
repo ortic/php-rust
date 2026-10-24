@@ -13198,6 +13198,7 @@ impl<'m> Vm<'m> {
             _ => return Ok(()),
         };
         let Some(o) = target.and_then(deref_object) else { return Ok(()) };
+        oop::bind_target_guard(&self.classes, self.frames.last().and_then(|f| f.class), &o, &name)?;
         let cid = o.borrow().class_id as usize;
         if let Some((decl, hint)) = prop_type_decl(&self.classes, cid, &name) {
             let cur = cell.borrow().clone();
@@ -13429,7 +13430,7 @@ impl<'m> Vm<'m> {
         }
         let cc = self.classes[class];
         let decl = &cc.enum_cases[case as usize];
-        let mut props = Props::new();
+        let mut props = Props::with_layout(Rc::clone(&cc.props_layout));
         let mut entries: Vec<(Box<[u8]>, PropVis)> = vec![(Box::from(&b"name"[..]), PropVis::Public)];
         props.set(b"name", Zval::Str(PhpStr::new(decl.name.to_vec())));
         if let Some(v) = &decl.value {
@@ -13437,18 +13438,23 @@ impl<'m> Vm<'m> {
             entries.push((Box::from(&b"value"[..]), PropVis::Public));
         }
         let id = self.next_obj_id();
-        let obj = Object {
+        let mut obj = Object {
             class_id: class as u32,
             class_name: cc.class_name.clone(),
             props,
             id,
             info: Rc::new(ObjectInfo::enum_case(entries)),
-            // Enum-case immutability has its own dedicated check (is_enum_case).
+            // Enum-case immutability has its own dedicated check (is_enum_case);
+            // `name`/`value` are also declared readonly (lower_enum), initialised here.
             rare: None,
             lazy: None,
             proxy_instance: None,
             gc: php_types::GcMark::new(),
         };
+        obj.mark_readonly_init(b"name");
+        if decl.value.is_some() {
+            obj.mark_readonly_init(b"value");
+        }
         let rc = Rc::new(RefCell::new(obj));
         self.enum_cache.insert((class, case), Rc::clone(&rc));
         rc

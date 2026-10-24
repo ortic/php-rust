@@ -795,6 +795,23 @@ pub(super) fn prop_indirect_guard(
     Ok(())
 }
 
+/// The write fetch Zend runs on the TARGET of `$o->p =& $x` (and of `foreach
+/// … as &$o->p`) before binding: `read_property(BP_VAR_W)` refuses a readonly
+/// or set-denied property ("Cannot indirectly modify …") ahead of any type
+/// check on the bound value (readonly_modification, enum foreach by reference).
+pub(super) fn bind_target_guard(
+    classes: &[&CompiledClass],
+    cur: Option<ClassId>,
+    o: &Rc<RefCell<Object>>,
+    name: &[u8],
+) -> Result<(), PhpError> {
+    let b = o.borrow();
+    let cid = b.class_id as usize;
+    let state = prop_slot_state(b.props.get(FieldScope { classes, scope: cur }.prop_key(cid, name).as_ref()));
+    drop(b);
+    prop_indirect_guard(classes, cur, cid, name, state, false, false)
+}
+
 /// Decide whether writing readonly property `decl::$name` from scope `cur` is
 /// allowed, given whether the property is already initialised on the instance.
 /// Returns the fatal to raise, or `None` if the write is a permitted first
