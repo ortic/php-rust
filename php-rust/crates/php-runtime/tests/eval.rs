@@ -1004,6 +1004,26 @@ fn rendered_null_array_offset_deprecation() {
     );
 }
 
+#[test]
+fn illegal_array_offset_write_names_the_key_type() {
+    // PHP 8.3+ `zend_illegal_array_offset_access` (bug79947, init_array_illegal_offset_type,
+    // closures/closure_array_*_error): objects by class, on every write/RMW path.
+    assert_eq!(
+        out("<?php $k = []; $f = function () {}; $w = [
+               function () use ($k) { $a = []; $a[$k] = 1; },
+               function () use ($k) { $a = []; $a[0][$k] = 1; },
+               function () use ($k) { $a = []; $a[$k] .= 'x'; },
+               function () use ($k) { $a = []; $a[$k]++; },
+               function () { $a = []; $a[new stdClass] = 1; },
+               function () use ($f) { return [$f => 1]; },
+             ];
+             foreach ($w as $g) { try { $g(); } catch (TypeError $e) { echo $e->getMessage(), '|'; } }"),
+        "Cannot access offset of type array on array|Cannot access offset of type array on array|\
+         Cannot access offset of type array on array|Cannot access offset of type array on array|\
+         Cannot access offset of type stdClass on array|Cannot access offset of type Closure on array|"
+    );
+}
+
 // --- foreach by reference (step 11d-3): `foreach ($a as &$v)` ---
 
 #[test]
