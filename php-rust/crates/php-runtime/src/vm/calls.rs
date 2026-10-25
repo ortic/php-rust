@@ -593,6 +593,10 @@ impl<'m> Vm<'m> {
             Zval::Str(s) => s.as_bytes().to_vec(),
             _ => return Err(not_callable()),
         };
+        // `[$closure, '__invoke']` (any case) is a call of the closure itself.
+        if matches!(elems[0], Zval::Closure(_)) && method.eq_ignore_ascii_case(b"__invoke") {
+            return self.invoke_value(elems[0].clone(), args);
+        }
 
         // S-73.2.1: Ensure frames is not empty before accessing frames[top].
         // During shutdown (when handlers are invoked), frames may be empty.
@@ -982,6 +986,8 @@ impl<'m> Vm<'m> {
         caller_class: Option<usize>,
     ) -> Option<Zval> {
         let (cid, bound): (usize, Option<Zval>) = match target {
+            // `$c->__invoke(...)` / `fromCallable([$c, '__invoke'])` is `$c` itself.
+            Zval::Closure(_) if method.eq_ignore_ascii_case(b"__invoke") => return Some(target.clone()),
             Zval::Object(o) => (o.borrow().class_id as usize, Some(target.clone())),
             Zval::Str(s) => {
                 let b = s.as_bytes();

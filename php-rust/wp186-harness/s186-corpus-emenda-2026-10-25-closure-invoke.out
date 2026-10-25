@@ -1,0 +1,50 @@
+EMENDA DICHIARATA del fail-set congelato s109 (file LOCALI non tracciati: wp109-harness/.gitignore ignora corpus-gate/ per
+REGOLE §10; questo .out è il registro auditabile — DA APPLICARE sul Mac al prossimo pre-flight). Causa: `Closure::__invoke` non
+esisteva come metodo: `$c->__invoke(...)` (in QUALSIASI maiuscola, anche minuscolo) dava «Call to undefined method
+Closure::__invoke()», `call_user_func([$c, '__invoke'])` «Value of type array is not callable», `$c->__invoke(...)` /
+`Closure::fromCallable([$c, '__invoke'])` «not callable», `is_callable([$c, '__invoke'])` false. Zend: `__invoke` è un metodo
+del Closure che chiama la closure stessa (case-insensitive come ogni metodo).
+Cura fuori sessione 2026-10-24/25 (richiesta utente: «continua a trovare bug», ultima delle due PR richieste; branch
+`fix/closure-invoke-method`, INDIPENDENTE dagli altri branch del giorno): `method_call` (oop.rs) e `invoke_array_callable`
+(calls.rs) passano un `__invoke` su closure a `invoke_value` (frame spinto come per `$c(...)`); `instance_arg_ref_target`
+(mod.rs) restituisce il corpo della closure ⇒ gli argomenti by-ref restano riferimenti; `make_method_closure` (FCC e
+fromCallable) restituisce la closure stessa (come Zend: `$c->__invoke(...) === $c`); `is_value_callable` accetta
+`[$closure, '__invoke']`. Dente `closure_invoke_method_any_case` in tests/eval.rs.
+Ambiente: macchina Linux/WSL (NON il Mac del progetto): php-src 8.5.7 dal tarball php.net, phpt-runner dev-release dal tree
+(profilo dev-release, non il pin), librerie di sistema senza -dev (stub di link locali); corpus sotto tetto di memoria 4G
+(cgroup systemd, OOMPolicy=continue). Baseline dello STESSO runner prima della cura (main f89ae085, senza tetto): 2658 pass ·
+1409 fail · 1238 skip == congelato emendato 22/10 (1409 per modo).
+
+NOMI (fail → pass, da togliere da corpus-s109-{off,on}.fails e da golden-content-{off,on}.tsv): 1409 → 1401 per modo
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/closures/bug78689.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/closures/closure_013.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/closures/closure_030.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/closures/closure_058.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/closures/closure_invoke_case_insensitive.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/closures/closure_invoke_ref_warning.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/first_class_callable/first_class_callable_009.phpt
+  -/Volumes/Extreme Pro/Claude/php-8.5.7/Zend/tests/variadic/closure_invoke.phpt
+NUOVI FAIL: nessuno (entrambi i modi, PHPR_REG_LOWER=0 e assente=ON); NOMI identici nei due modi.
+SKIP: 1238 → 1238 (nessuno skip cambia esito).
+
+CONTENUTO dei 1401 restanti, prima ↔ dopo (sha256 del chunk, stessa macchina): identico tranne
+  RI-BASARE (progressi: prima morivano alla chiamata `__invoke`, ora procedono e falliscono più avanti per altro):
+    attributes/deprecated/functions/gh17866.phpt   ora ReflectionMethod «Closure::__invoke() does not exist» (reflection)
+    call_user_functions/call_user_func_003.phpt    prima diff dalla riga 1 alla 2
+    closures/closure_014.phpt                      prima diff dalla riga 4 alla 5
+    closures/closure_016.phpt                      `is_callable([$closure,'__invoke'])` ora true (atteso); restano
+                                                   syntax_only e il callable_name «Closure::__invoke»
+    closures/closure_020.phpt                      prima diff dalla riga 1 alla 5
+    closures/closure_059.phpt                      prima diff dalla riga 1 alla 2
+    closures/closure_compare.phpt                  arriva in fondo; fallisce sul `==` fra closure — divergenza PRE-esistente
+                                                   catalogata §3.38 (`$p == $p` false in phpr)
+  carve-out settype_{bool,int,string}_nan_with_error_handler3.phpt (non deterministici, già esclusi dal gate)
+  lazy_objects/gh20873.phpt   flap di timing pre-esistente
+  generators/yield_from_deep_recursion.phpt  «timed out» → «crashed (SIGKILL)»: TETTO 4G di questa macchina, non la cura.
+I golden del Mac NON sono ri-basabili da qui (i chunk portano i path della macchina): replay corpus-gate.sh sul Mac dopo l'emenda.
+Batteria `cargo test --release -j 4` (PHPR_ALLOW_MISSING_ORACLE=1, niente oracle 8.5.7 qui; tetto 5G; la prima corsa del
+24/10 è stata uccisa per memoria bassa della macchina, NON per errore — ripetuta su richiesta dell'utente): 1753/0/2 rc=0 (1752 + 1 dente nuovo).
+Sonde vs oracle: `->__invoke`/`->__INVOKE` con by-ref, `call_user_func([$c,'__invoke'|'__INVOKE'])`, FCC `$c->__invoke(...)`
+(=== $c), `fromCallable([$c,'__invoke'])` (=== $c), `is_callable` — identiche. `method_exists($closure, …)` NON curato
+(`Closure` non è nella tabella delle classi, §3.37).
+Dente LOC: tests/eval.rs 4773 → 4786 (cap alzato DICHIARANDO in loc_dente.rs); vm/mod.rs resta sotto il suo cap.
