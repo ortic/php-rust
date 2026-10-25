@@ -1120,6 +1120,15 @@ prima di «E1:», phpr ora al primo Ret dentro il catch — `getMessage()` — i
 nota GC al punto di morte dell'operando (pop dei temp oggetto nei FetchProp/MethodCall su temporaneo, unwind): da
 cercare per NOME nel fail-set congelato prima di toccare il loop caldo.
 
+### 3.38 🔴 Confronto LASCO (`==`/`!=`) fra closure: sempre «diverse», anche una closure con sé stessa (2026-10-25)
+
+Trovata curando `Closure::__invoke` (branch `fix/closure-invoke-method`): in phpr `$p == $p` è `false` per QUALSIASI
+closure (l'identità `===` è corretta). Zend (`zend_closure_compare`): due closure sono `==` se hanno la stessa funzione, lo
+stesso `$this` e lo stesso scope ⇒ `$p == $p` true, e due `Closure::fromCallable([$o, 'm'])` dello stesso metodo/oggetto sono
+`==`. Corpus: `closures/closure_compare.phpt` (ora arriva fino in fondo — prima moriva a `fromCallable([$c, '__invoke'])` — e
+fallisce sulle righe `==`). Sonda: `~/Claude/corpus-run/probe/cmp.php` (fuori repo). Sede probabile: `php_types::ops`
+(`loose_eq` sul ramo `Zval::Closure`).
+
 ## 4. Punti di forza da NON toccare (invarianti verificati byte-identici)
 
 Per evitare regressioni, questi comportamenti sono **già** byte-identici con

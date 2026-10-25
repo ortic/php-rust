@@ -2094,6 +2094,19 @@ fn oop_closure_from_callable_string() {
     );
 }
 
+#[test]
+fn closure_invoke_method_any_case() {
+    // closures/closure_invoke_case_insensitive, closure_invoke_ref_warning: `__invoke`
+    // is a real Closure method — any case, by-ref args kept, array callable, FCC.
+    assert_eq!(
+        out("<?php $inc = function (&$n) { $n++; }; $n = 1; $inc->__INVOKE($n); $inc->__invoke($n);
+             $id = function ($x) { return $x; }; $f = $id->__invoke(...);
+             echo $n, call_user_func([$id, '__Invoke'], 'a'), $f('b'), $f === $id ? 'S' : 'D',
+                  is_callable([$id, '__invoke']) ? 'y' : 'n';"),
+        "3abSy"
+    );
+}
+
 // --- step 20-1: exceptions — throw, try/catch, hierarchy, accessors ---
 
 #[test]

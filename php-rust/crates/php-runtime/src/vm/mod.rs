@@ -11228,7 +11228,8 @@ impl<'m> Vm<'m> {
                         let magic = if is_obj { &b"__call"[..] } else { &b"__callStatic"[..] };
                         method_callable(cid, m.as_bytes(), magic, !is_obj)
                     }
-                    None => false,
+                    // `[$closure, '__invoke']` (any case) calls the closure itself.
+                    None => matches!(elems[0], Zval::Closure(_)) && m.as_bytes().eq_ignore_ascii_case(b"__invoke"),
                 }
             }
             Zval::Object(o) => {
@@ -11807,6 +11808,11 @@ impl<'m> Vm<'m> {
     /// anyway (non-object/native receiver, `__call` routing, unresolved or
     /// invisible method).
     fn instance_arg_ref_target(&self, top: usize, this: &Zval, method: &[u8]) -> Option<&'m Func> {
+        // `$closure->__invoke(…)` binds like a call of the closure's own body.
+        if let Zval::Closure(cl) = this {
+            let m = self.modules.get(cl.module_id).copied().unwrap_or(self.module);
+            return cl.named.is_none().then_some(()).filter(|_| method.eq_ignore_ascii_case(b"__invoke")).and(m.closures.get(cl.fn_idx));
+        }
         let Zval::Object(o) = this else { return None };
         let cid = o.borrow().class_id as usize;
         let resolved = resolve_method_runtime(&self.classes, cid, method);

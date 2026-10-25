@@ -1328,7 +1328,12 @@ impl<'m> Vm<'m> {
             }
         }
         // A closure value's built-in methods (`$c->bindTo(...)`, `$c->call(...)`)
-        // are dispatched natively — a closure is not a user object (step 19-6).
+        // are dispatched natively — a closure is not a user object (step 19-6) —
+        // except `$c->__invoke(...)` (any case): a plain call of the closure,
+        // frame pushed and by-ref arguments kept.
+        if matches!(this, Zval::Closure(_)) && method.eq_ignore_ascii_case(b"__invoke") {
+            return self.invoke_value(this, args);
+        }
         if let Zval::Closure(cl) = &this {
             let cl = Rc::clone(cl);
             let result = self.closure_instance_method(&cl, method, decay_args(args))?;
